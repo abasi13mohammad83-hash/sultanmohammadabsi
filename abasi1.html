@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Quantum Particle in a Box</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #e0e0e0; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: Arial;
+            width: 320px;
+            z-index: 100;
+        }
+        .input-group { margin: 8px 0; }
+        label { display: inline-block; width: 30px; }
+        input { width: 70px; padding: 5px; margin: 2px; }
+        button { 
+            background: #4CAF50; 
+            color: white; 
+            border: none; 
+            padding: 10px 15px; 
+            margin: 10px 0;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        #psiValue { 
+            color: #87CEFA; 
+            font-size: 16px; 
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .title { 
+            color: #FFFF00; 
+            font-size: 18px; 
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .formula { 
+            color: #7FFFD4; 
+            font-size: 14px; 
+            margin-bottom: 15px;
+        }
+        .slider-group { margin: 10px 0; }
+        .slider-label { display: block; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="title">Mohammad Abasi Quantum</div>
+        <div class="formula">ψ(x,y,z) = (2/L)^(3/2) sin(πx/L) sin(πy/L) sin(πz/L)</div>
+        
+        <div class="input-group">
+            <label>L:</label><input type="number" id="L" value="5" step="0.1" min="0.1">
+            <label>x:</label><input type="number" id="x" value="2.5" step="0.1">
+        </div>
+        <div class="input-group">
+            <label>y:</label><input type="number" id="y" value="2.5" step="0.1">
+            <label>z:</label><input type="number" id="z" value="2.5" step="0.1">
+        </div>
+        
+        <div class="slider-group">
+            <div class="slider-label">Surface z-position: <span id="zSurfaceValue">2.5</span></div>
+            <input type="range" id="zSurface" min="0" max="5" value="2.5" step="0.1" style="width: 100%;">
+        </div>
+        
+        <button onclick="updatePlot()">Calculate & Plot</button>
+        <div id="psiValue">ψ = </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let scatterPoints, wireframeSurface, redPoint;
+        let L = 5, x = 2.5, y = 2.5, z = 2.5;
+        let zSurface = 2.5;
+
+        function psi(x, y, z, L) {
+            if (L <= 0) return 0;
+            return Math.pow(2/L, 1.5) * 
+                   Math.sin(Math.PI * x / L) * 
+                   Math.sin(Math.PI * y / L) * 
+                   Math.sin(Math.PI * z / L);
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xe0e0e0);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(8, 8, 8);
+            camera.up.set(0, 0, 1);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 2;
+            controls.maxDistance = 50;
+
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+
+            document.getElementById('zSurface').addEventListener('input', function(e) {
+                zSurface = parseFloat(e.target.value);
+                document.getElementById('zSurfaceValue').textContent = zSurface.toFixed(2);
+                updatePlot();
+            });
+
+            create3DAxisLabels();
+            updatePlot();
+            animate();
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function create3DAxisLabels() {
+            const xLabel = createTextLabel3D('X', 0xff0000);
+            xLabel.position.set(L + 1, 0, 0);
+            scene.add(xLabel);
+
+            const yLabel = createTextLabel3D('Y', 0xff00ff);
+            yLabel.position.set(0, L + 1, 0);
+            scene.add(yLabel);
+
+            const zLabel = createTextLabel3D('ψ', 0x0088ff);
+            zLabel.position.set(0, 0, 1);
+            scene.add(zLabel);
+        }
+
+        function createTextLabel3D(text, color) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 128;
+            
+            context.fillStyle = 'rgba(0,0,0,0)';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            
+            context.font = 'Bold 60px Arial';
+            context.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(text, canvas.width/2, canvas.height/2);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.SpriteMaterial({ 
+                map: texture,
+                transparent: true
+            });
+            const sprite = new THREE.Sprite(material);
+            sprite.scale.set(3, 1.5, 1);
+            
+            return sprite;
+        }
+
+        function createScatterPoints() {
+            if (scatterPoints) scene.remove(scatterPoints);
+
+            const n = 12;
+            const positions = [];
+            const colors = [];
+
+            let maxAbsPsi = 0.001;
+            const psiValues = [];
+            
+            const autoScale = Math.max(1, L);
+
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    for (let k = 0; k < n; k++) {
+                        const xi = (i / (n-1)) * L;
+                        const yi = (j / (n-1)) * L;
+                        const zi = (k / (n-1)) * L;
+                        
+                        const psiVal = psi(xi, yi, zi, L) * autoScale;
+                        psiValues.push(psiVal);
+                        maxAbsPsi = Math.max(maxAbsPsi, Math.abs(psiVal));
+                    }
+                }
+            }
+
+            let idx = 0;
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    for (let k = 0; k < n; k++) {
+                        const xi = (i / (n-1)) * L;
+                        const yi = (j / (n-1)) * L;
+                        const zi = (k / (n-1)) * L;
+                        
+                        const psiVal = psiValues[idx++];
+                        const normalizedPsi = (psiVal/autoScale + maxAbsPsi/autoScale) / (2 * maxAbsPsi/autoScale);
+
+                        positions.push(xi, yi, psiVal);
+                        const color = getPinkViridisColor(normalizedPsi); // تابع جدید با رنگ‌های صورتی
+                        colors.push(color.r, color.g, color.b);
+                    }
+                }
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 0.3 * Math.min(2, L),
+                vertexColors: true,
+                transparent: true,
+                opacity: .15,
+                sizeAttenuation: true
+            });
+
+            scatterPoints = new THREE.Points(geometry, material);
+            scene.add(scatterPoints);
+        }
+
+        function createWireframeSurface() {
+            if (wireframeSurface) scene.remove(wireframeSurface);
+
+            const n = 20;
+            const vertices = [];
+            const indices = [];
+            const autoScale = Math.max(1, L);
+
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    const xi = (i / (n-1)) * L;
+                    const yj = (j / (n-1)) * L;
+                    const psiVal = psi(xi, yj, zSurface, L) * autoScale;
+                    
+                    vertices.push(xi, yj, psiVal);
+                }
+            }
+
+            for (let i = 0; i < n-1; i++) {
+                for (let j = 0; j < n-1; j++) {
+                    const a = i * n + j;
+                    const b = i * n + (j + 1);
+                    const c = (i + 1) * n + j;
+                    const d = (i + 1) * n + (j + 1);
+
+                    indices.push(a, b, a, c);
+                }
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setIndex(indices);
+
+            const material = new THREE.LineBasicMaterial({ 
+                color: 0x0000ff, // آبی پررنگ, // خطوط سطح سبز باقی ماند
+                transparent: true,
+                opacity: 10,
+                linewidth: 1
+            });
+
+            wireframeSurface = new THREE.LineSegments(geometry, material);
+            scene.add(wireframeSurface);
+        }
+
+        function createRedPoint() {
+            if (redPoint) scene.remove(redPoint);
+
+            const autoScale = Math.max(1, L);
+            const psiVal = psi(x, y, z, L) * autoScale;
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute([x, y, psiVal], 3));
+            
+            const material = new THREE.PointsMaterial({
+                size: 6 * Math.min(2, L),
+                color: 0xff0000,
+                sizeAttenuation: false
+            });
+
+            redPoint = new THREE.Points(geometry, material);
+            scene.add(redPoint);
+        }
+        function getPinkViridisColor(t) {
+             const pinkViridis = [
+        [0.9, 0.2, 0.9],    // بنفش پررنگ
+        [0.3, 0.5, 0.9],    // آبی پررنگ  
+        [0.2, 0.8, 0.4],    // سبز پررنگ
+        [0.9, 0.6, 0.2],    // نارنجی پررنگ
+        [0.9, 0.3, 0.6],    // صورتی پررنگ
+        [0.8, 0.9, 0.1],    // زرد پررنگ
+        [0.2, 0.7, 0.9],    // آبی فیروزه‌ای
+        [0.7, 0.3, 0.9],    // بنفش تیره
+        [0.4, 0.6, 0.9],    // آبی متوسط
+        [0.9, 0.4, 0.4],    // قرمز
+        [0.4, 0.9, 0.3],    // سبز روشن
+        [0.9, 0.8, 0.3]     // زرد طلایی
+    ];
+
+
+
+
+            const index = Math.floor(t * (pinkViridis.length - 1));
+            const color1 = pinkViridis[Math.max(0, Math.min(index, pinkViridis.length - 1))];
+            const color2 = pinkViridis[Math.max(0, Math.min(index + 1, pinkViridis.length - 1))];
+            
+            const frac = (t * (pinkViridis.length - 1)) - index;
+            
+            return new THREE.Color(
+                color1[0] + frac * (color2[0] - color1[0]),
+                color1[1] + frac * (color2[1] - color1[1]),
+                color1[2] + frac * (color2[2] - color1[2])
+            );
+        }
+
+        function updatePlot() {
+            L = parseFloat(document.getElementById('L').value) || 5;
+            x = parseFloat(document.getElementById('x').value) || 2.5;
+            y = parseFloat(document.getElementById('y').value) || 2.5;
+            z = parseFloat(document.getElementById('z').value) || 2.5;
+
+            document.getElementById('zSurface').max = L;
+            document.getElementById('zSurface').value = zSurface = Math.min(zSurface, L);
+
+            if (L <= 0) {
+                alert('⚠️ L must be > 0');
+                return;
+            }
+            if (x < 0 || x > L || y < 0 || y > L || z < 0 || z > L) {
+                alert(`⚠️ (x,y,z) must be between 0 and ${L}`);
+                return;
+            }
+
+            const psiVal = psi(x, y, z, L);
+            document.getElementById('psiValue').textContent = 
+                `ψ(${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}) = ${psiVal.toFixed(6)}`;
+
+            if (scatterPoints) scene.remove(scatterPoints);
+            if (wireframeSurface) scene.remove(wireframeSurface);
+            if (redPoint) scene.remove(redPoint);
+
+            scene.children = scene.children.filter(child => 
+                child instanceof THREE.AmbientLight || 
+                child instanceof THREE.DirectionalLight ||
+                child instanceof THREE.AxesHelper ||
+                child instanceof THREE.Sprite
+            );
+
+            createScatterPoints();
+            createWireframeSurface();
+            createRedPoint();
+
+            const axesHelper = new THREE.AxesHelper(L);
+            scene.add(axesHelper);
+
+            controls.reset();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        init();
+    </script>
+</body>
+</html>
